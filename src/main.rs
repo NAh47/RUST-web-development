@@ -40,7 +40,6 @@ async fn main() {
         .unwrap();
 }
 
-/// Fallback handler for not found routes
 async fn fallback_not_found() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, "Endpoint does not exist")
 }
