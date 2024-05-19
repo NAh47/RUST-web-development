@@ -5,10 +5,9 @@ use api::*;
 use axum::{
     routing::{get, post, put, delete},
     Router,
-    Json,
+    extract::Extension,
     http::StatusCode,
     response::{IntoResponse, Response},
-    extract::{Path, State},
 };
 use question_list::{QuestionList, Question};
 use std::net::SocketAddr;
@@ -25,9 +24,8 @@ async fn main() {
 
     // Configure the Axum router with routes for CRUD operations
     let app = Router::new()
-        .route("/questions", get(api::fetch_all_questions).post(api::create_question))
-        .route("/questions/:id", get(api::fetch_question).put(api::update_question).delete(api::remove_question))
-        .fallback(fallback_not_found.into_service())
+        .route("/questions", get(fetch_all_questions).post(create_question))
+        .route("/questions/:id", get(fetch_question).put(update_question).delete(remove_question))
         .layer(axum::extract::Extension(shared_question_list));
 
     // Define the address and port to serve on localhost

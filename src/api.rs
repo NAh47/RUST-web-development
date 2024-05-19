@@ -1,50 +1,53 @@
 use crate::*;
+use axum::{
+    extract::{Path, Extension},
+    response::IntoResponse,
+    Json,
+    http::StatusCode,
+};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-/// Fetch all questions from the database.
 pub async fn fetch_all_questions(
-    State(question_list): State<Arc<RwLock<QuestionList>>>
-) -> Response {
+    Extension(question_list): Extension<Arc<RwLock<QuestionList>>>
+) -> impl IntoResponse {
     let questions = question_list.read().await.get_all_questions();
-    (StatusCode::OK, Json(questions)).into_response()
+    (StatusCode::OK, Json(questions))
 }
 
-/// Create a new question using data provided in the JSON body.
 pub async fn create_question(
-    State(question_list): State<Arc<RwLock<QuestionList>>>,
+    Extension(question_list): Extension<Arc<RwLock<QuestionList>>>,
     Json(new_question): Json<Question>
-) -> Response {
+) -> impl IntoResponse {
     question_list.write().await.add_question(new_question);
-    (StatusCode::CREATED, "Question added successfully").into_response()
+    (StatusCode::CREATED, "Question added successfully")
 }
 
-/// Retrieve a specific question by its ID.
 pub async fn fetch_question(
-    State(question_list): State<Arc<RwLock<QuestionList>>>,
+    Extension(question_list): Extension<Arc<RwLock<QuestionList>>>,
     Path(id): Path<String>
-) -> Response {
+) -> impl IntoResponse {
     match question_list.read().await.find_question(&id) {
         Some(question) => (StatusCode::OK, Json(question)).into_response(),
         None => (StatusCode::NOT_FOUND, "Question not found").into_response(),
     }
 }
 
-/// Update a question identified by its ID with new data provided in the JSON body.
 pub async fn update_question(
-    State(question_list): State<Arc<RwLock<QuestionList>>>,
+    Extension(question_list): Extension<Arc<RwLock<QuestionList>>>,
     Path(id): Path<String>,
     Json(updated_question): Json<Question>
-) -> Response {
+) -> impl IntoResponse {
     match question_list.write().await.update_question(&id, updated_question) {
         Ok(_) => (StatusCode::OK, "Question updated successfully").into_response(),
         Err(err) => (StatusCode::NOT_FOUND, err).into_response(),
     }
 }
 
-/// Delete a question by its ID.
 pub async fn remove_question(
-    State(question_list): State<Arc<RwLock<QuestionList>>>,
+    Extension(question_list): Extension<Arc<RwLock<QuestionList>>>,
     Path(id): Path<String>
-) -> Response {
+) -> impl IntoResponse {
     if question_list.write().await.remove_question(&id).is_some() {
         (StatusCode::OK, "Question deleted successfully").into_response()
     } else {
