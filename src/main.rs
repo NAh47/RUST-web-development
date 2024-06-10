@@ -13,23 +13,47 @@ use question_list::{QuestionList, Question};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use sqlx::postgres::PgPoolOptions;
+use std::env;
+use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
-    // Initialize the question list with pre-loaded data
-    let question_list = QuestionList::new();
+    dotenv().ok();
 
-    // Wrap the question list in Arc and RwLock for thread-safe access across async tasks
-    let shared_question_list = Arc::new(RwLock::new(question_list));
+    // Initialize the PostgreSQL connection pool
+    let database_url = format!(
+        "postgres://{}:{}@{}:{}/{}",
+        env::var("PG_USER").expect("PG_USER not set"),
+        env::var("PG_PASSWORD").expect("PG_PASSWORD not set"),
+        env::var("PG_HOST").expect("PG_HOST not set"),
+        "5432",
+        env::var("PG_DBNAME").expect("PG_DBNAME not set")
+    );
 
-    // Configure the Axum router with routes for CRUD operations
+    println!("Connecting to the database at {}", database_url);
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to create pool");
+
+    println!("Connected to the database");
+
+    // Initialize the question list with the PostgreSQL pool
+    let question_list = QuestionList::new(pool.clone()).await;
+    let shared_question_list = Arc::new(question_list);
+
+    // Configure the Axum router with routes 
     let app = Router::new()
         .route("/questions", get(fetch_all_questions).post(create_question))
         .route("/questions/:id", get(fetch_question).put(update_question).delete(remove_question))
-        .layer(axum::extract::Extension(shared_question_list));
+        .layer(Extension(shared_question_list));
 
-    // Define the address and port to serve on localhost
-    let address = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let address = SocketAddr::from(([0, 0, 0, 0], 3000)); // Listen on all interfaces
+
+    println!("Starting server on {}", address);
 
     // Run the Axum server
     axum::Server::bind(&address)

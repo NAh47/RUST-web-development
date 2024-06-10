@@ -1,7 +1,8 @@
 use serde::{Serialize, Deserialize};
+use sqlx::{PgPool, FromRow};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
 pub struct Question {
     pub id: String,
     pub header: String,
@@ -17,51 +18,82 @@ impl Question {
 
 #[derive(Clone)]
 pub struct QuestionList {
-    questions: HashMap<String, Question>,
+    pool: PgPool,
 }
 
 impl QuestionList {
-    pub fn new() -> Self {
-        let mut list = Self { questions: HashMap::new() };
-        list.load_initial_questions();
-        list
+    pub async fn new(pool: PgPool) -> Self {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS questions (
+                id VARCHAR PRIMARY KEY,
+                header VARCHAR NOT NULL,
+                body VARCHAR NOT NULL,
+                categories VARCHAR[]
+            );"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        Self { pool }
     }
 
-    fn load_initial_questions(&mut self) {
-        let sample_questions = vec![
-            Question::new("1".to_string(), "What is Rust?".to_string(), "A systems programming language that aims for memory safety and concurrency.".to_string(), Some(vec!["programming".to_string(), "rust".to_string()])),
-            Question::new("2".to_string(), "Why use Rust?".to_string(), "It provides memory safety guarantees without a garbage collector.".to_string(), Some(vec!["memory".to_string(), "safety".to_string()])),
-            Question::new("3".to_string(), "How does ownership work in Rust?".to_string(), "Ownership rules help manage memory automatically in a safe manner.".to_string(), Some(vec!["ownership".to_string(), "rust".to_string()])),
-        ];
+    pub async fn add_question(&self, question: Question) {
+        sqlx::query(
+            "INSERT INTO questions (id, header, body, categories) VALUES ($1, $2, $3, $4)"
+        )
+        .bind(&question.id)
+        .bind(&question.header)
+        .bind(&question.body)
+        .bind(&question.categories)
+        .execute(&self.pool)
+        .await
+        .unwrap();
+    }
 
-        for question in sample_questions {
-            self.questions.insert(question.id.clone(), question);
+    pub async fn get_all_questions(&self) -> Vec<Question> {
+        sqlx::query_as::<_, Question>("SELECT * FROM questions")
+            .fetch_all(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    pub async fn find_question(&self, id: &str) -> Option<Question> {
+        sqlx::query_as::<_, Question>("SELECT * FROM questions WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    pub async fn update_question(&self, id: &str, new_question: Question) -> Result<(), String> {
+        let result = sqlx::query(
+            "UPDATE questions SET header = $1, body = $2, categories = $3 WHERE id = $4"
+        )
+        .bind(&new_question.header)
+        .bind(&new_question.body)
+        .bind(&new_question.categories)
+        .bind(id)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(_) => Err("Question not found".to_string()),
         }
     }
 
-    pub fn add_question(&mut self, question: Question) {
-        self.questions.insert(question.id.clone(), question);
-    }
-
-    pub fn get_all_questions(&self) -> Vec<Question> {
-        self.questions.values().cloned().collect()
-    }
-
-    pub fn find_question(&self, id: &str) -> Option<&Question> {
-        self.questions.get(id)
-    }
-
-    pub fn update_question(&mut self, id: &str, new_question: Question) -> Result<(), String> {
-        match self.questions.get_mut(id) {
-            Some(question) => {
-                *question = new_question;
-                Ok(())
-            },
-            None => Err("Question not found".to_string())
+    pub async fn remove_question(&self, id: &str) -> Option<Question> {
+        let question = self.find_question(id).await;
+        if let Some(q) = question {
+            sqlx::query("DELETE FROM questions WHERE id = $1")
+                .bind(id)
+                .execute(&self.pool)
+                .await
+                .unwrap();
+            Some(q)
+        } else {
+            None
         }
-    }
-
-    pub fn remove_question(&mut self, id: &str) -> Option<Question> {
-        self.questions.remove(id)
     }
 }
